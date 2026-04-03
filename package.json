@@ -1,5 +1,5 @@
 {
-  "name": "@shaobin/code-search-tool",
+  "name": "java-ast-search-tool",
   "version": "0.1.0",
   "description": "AST-based Java repository search toolkit for Node.js projects",
   "type": "module",
