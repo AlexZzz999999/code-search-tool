@@ -18,7 +18,12 @@ export declare class JavaCodeSearchEngine {
     private resolveTypeName;
     private resolveCallSymbol;
     private resolveCallReceiverTypes;
+    private resolveCallExpressionType;
+    private resolveChainedExpressionType;
+    private resolveReturnTypesFromCall;
     private resolveValueType;
+    private inferLocalVariableType;
     private findEnclosingCallableParameterTypes;
     private collectTypeHierarchy;
+    private collectReturnTypes;
 }

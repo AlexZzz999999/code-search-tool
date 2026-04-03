@@ -112,6 +112,7 @@ javasearch search --root /path/to/java-repo --text findOrder --kind method --exa
 - 注解使用点检索
 - 跨文件类型定义解析和基础引用反查
 - 基于字段、方法参数和 `this` 的方法调用目标解析
+- 局部变量类型推断与基础链式调用返回值推断
 - 包名和 imports 提取
 
 下一步很适合继续扩展：

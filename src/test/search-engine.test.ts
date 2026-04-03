@@ -235,3 +235,80 @@ public class Order {}
     "com.acme.demo.Repository.load"
   );
 });
+
+test("JavaCodeSearchEngine resolves local-variable and chained call targets", () => {
+  const engine = new JavaCodeSearchEngine([
+    parseJavaSource({
+      filePath: "/tmp/src/com/acme/demo/FlowService.java",
+      source: `
+package com.acme.demo;
+
+public class FlowService {
+  public void run() {
+    Repository repo = loadRepo();
+    var runner = buildRunner();
+    repo.load();
+    runner.execute();
+    loadRunner().execute();
+  }
+
+  public Repository loadRepo() {
+    return new Repository();
+  }
+
+  public Runner buildRunner() {
+    return new Runner();
+  }
+
+  public Runner loadRunner() {
+    return new Runner();
+  }
+}
+`
+    }),
+    parseJavaSource({
+      filePath: "/tmp/src/com/acme/demo/Repository.java",
+      source: `
+package com.acme.demo;
+
+public class Repository {
+  public void load() {}
+}
+`
+    }),
+    parseJavaSource({
+      filePath: "/tmp/src/com/acme/demo/Runner.java",
+      source: `
+package com.acme.demo;
+
+public class Runner {
+  public void execute() {}
+}
+`
+    })
+  ]);
+
+  const repoLoadCall = engine.search({
+    kind: "call",
+    text: "load",
+    exact: true,
+    filePath: "/tmp/src/com/acme/demo/FlowService.java"
+  })[0]?.symbol;
+  assert.ok(repoLoadCall);
+  const repoLoadResolution = engine.resolveSymbol(repoLoadCall!);
+  assert.equal(repoLoadResolution.candidates[0]?.qualifiedName, "com.acme.demo.Repository.load");
+
+  const executeCalls = engine.search({
+    kind: "call",
+    text: "execute",
+    exact: true,
+    filePath: "/tmp/src/com/acme/demo/FlowService.java"
+  });
+  assert.equal(executeCalls.length, 2);
+
+  const localVarResolution = engine.resolveSymbol(executeCalls[0]!.symbol);
+  assert.equal(localVarResolution.candidates[0]?.qualifiedName, "com.acme.demo.Runner.execute");
+
+  const chainedResolution = engine.resolveSymbol(executeCalls[1]!.symbol);
+  assert.equal(chainedResolution.candidates[0]?.qualifiedName, "com.acme.demo.Runner.execute");
+});

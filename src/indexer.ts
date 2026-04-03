@@ -313,6 +313,40 @@ function walkNode(context: {
     }
   }
 
+  if (node.type === "local_variable_declaration") {
+    const enclosingType = typeStack[typeStack.length - 1];
+    const currentCallable = callableStack[callableStack.length - 1];
+    const declarationType = readDeclarationType(node, source);
+    for (const child of node.namedChildren) {
+      if (child.type !== "variable_declarator") {
+        continue;
+      }
+      const nameNode = child.childForFieldName("name");
+      const valueNode = child.childForFieldName("value");
+      const name = nameNode ? sliceText(nameNode, source) : undefined;
+      if (!name) {
+        continue;
+      }
+      symbols.push(
+        createSymbol({
+          kind: "field",
+          name,
+          packageName,
+          enclosingType: enclosingType?.name,
+          filePath,
+          node: child,
+          metadata: {
+            type: declarationType,
+            declaredIn: currentCallable?.name,
+            isLocal: true,
+            initializerKind: valueNode?.type,
+            initializerText: valueNode ? sliceText(valueNode, source) : undefined
+          }
+        })
+      );
+    }
+  }
+
   if (node.type === "method_invocation") {
     const nameNode = node.childForFieldName("name");
     const name = nameNode ? sliceText(nameNode, source) : undefined;

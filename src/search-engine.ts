@@ -270,6 +270,14 @@ export class JavaCodeSearchEngine {
         : [];
     }
 
+    if (expression.endsWith(")")) {
+      return this.resolveCallExpressionType(expression, symbol, sourceFile);
+    }
+
+    if (expression.includes(".") && !expression.startsWith("this.")) {
+      return this.resolveChainedExpressionType(expression, symbol, sourceFile);
+    }
+
     if (expression.startsWith("this.")) {
       return this.resolveValueType(expression.slice(5), symbol, sourceFile);
     }
@@ -279,6 +287,49 @@ export class JavaCodeSearchEngine {
     }
 
     return this.resolveValueType(expression, symbol, sourceFile);
+  }
+
+  private resolveCallExpressionType(
+    expression: string,
+    symbol: JavaSymbol,
+    sourceFile: JavaFileIndex
+  ): JavaSymbol[] {
+    const nestedCall = sourceFile.symbols.find(
+      (candidate) =>
+        candidate.kind === "call" &&
+        candidate.metadata?.enclosingCallable?.toString() === symbol.metadata?.enclosingCallable?.toString() &&
+        candidate.range.start.line === symbol.range.start.line &&
+        `${candidate.name}(` === expression.slice(0, candidate.name.length + 1)
+    );
+    if (!nestedCall) {
+      return [];
+    }
+
+    return this.resolveReturnTypesFromCall(nestedCall, sourceFile);
+  }
+
+  private resolveChainedExpressionType(
+    expression: string,
+    symbol: JavaSymbol,
+    sourceFile: JavaFileIndex
+  ): JavaSymbol[] {
+    const nestedCall = sourceFile.symbols.find(
+      (candidate) =>
+        candidate.kind === "call" &&
+        candidate.metadata?.enclosingCallable?.toString() === symbol.metadata?.enclosingCallable?.toString() &&
+        candidate.range.start.line === symbol.range.start.line &&
+        expression.endsWith(`.${candidate.name}`)
+    );
+    if (!nestedCall) {
+      return [];
+    }
+
+    const resolvedCalls = this.resolveCallSymbol(nestedCall, sourceFile);
+    return this.collectReturnTypes(resolvedCalls, sourceFile);
+  }
+
+  private resolveReturnTypesFromCall(symbol: JavaSymbol, sourceFile: JavaFileIndex): JavaSymbol[] {
+    return this.collectReturnTypes(this.resolveCallSymbol(symbol, sourceFile), sourceFile);
   }
 
   private resolveValueType(
@@ -297,14 +348,49 @@ export class JavaCodeSearchEngine {
       (candidate) =>
         candidate.kind === "field" &&
         candidate.enclosingType === symbol.enclosingType &&
-        candidate.name === normalizedValue
+        candidate.name === normalizedValue &&
+        (!candidate.metadata?.isLocal ||
+          candidate.metadata?.declaredIn?.toString() === symbol.metadata?.enclosingCallable?.toString())
     );
     const fieldType = fieldSymbol?.metadata?.type?.toString();
-    if (fieldType) {
+    if (fieldType && fieldType !== "var") {
       return this.resolveTypeName(fieldType, sourceFile);
     }
 
+    if (fieldSymbol?.metadata?.isLocal && fieldType === "var") {
+      const inferred = this.inferLocalVariableType(fieldSymbol, sourceFile);
+      if (inferred.length > 0) {
+        return inferred;
+      }
+    }
+
     return [];
+  }
+
+  private inferLocalVariableType(symbol: JavaSymbol, sourceFile: JavaFileIndex): JavaSymbol[] {
+    const initializerText = symbol.metadata?.initializerText?.toString();
+    const localCall = sourceFile.symbols.find(
+      (candidate) =>
+        candidate.kind === "call" &&
+        candidate.metadata?.enclosingCallable?.toString() === symbol.metadata?.declaredIn?.toString() &&
+        initializerText === buildCallExpression(candidate)
+    );
+    if (!localCall) {
+      return [];
+    }
+
+    const resolvedCalls = this.resolveCallSymbol(localCall, sourceFile);
+    const inferred = new Map<string, JavaSymbol>();
+    for (const method of resolvedCalls) {
+      const returnType = method.metadata?.returnType?.toString();
+      if (!returnType || returnType === "void") {
+        continue;
+      }
+      for (const type of this.resolveTypeName(returnType, sourceFile)) {
+        inferred.set(candidateKey(type), type);
+      }
+    }
+    return [...inferred.values()];
   }
 
   private findEnclosingCallableParameterTypes(
@@ -362,6 +448,20 @@ export class JavaCodeSearchEngine {
     }
 
     return [...collected.values()];
+  }
+
+  private collectReturnTypes(methods: JavaSymbol[], sourceFile: JavaFileIndex): JavaSymbol[] {
+    const resolvedTypes = new Map<string, JavaSymbol>();
+    for (const method of methods) {
+      const returnType = method.metadata?.returnType?.toString();
+      if (!returnType || returnType === "void") {
+        continue;
+      }
+      for (const type of this.resolveTypeName(returnType, sourceFile)) {
+        resolvedTypes.set(candidateKey(type), type);
+      }
+    }
+    return [...resolvedTypes.values()];
   }
 }
 
@@ -455,4 +555,17 @@ function splitMetadataList(value: string | number | boolean | undefined): string
     return [];
   }
   return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function buildCallExpression(symbol: JavaSymbol): string | undefined {
+  if (symbol.kind !== "call") {
+    return undefined;
+  }
+  const expression = symbol.metadata?.expression?.toString();
+  const argumentCount = Number(symbol.metadata?.argumentCount ?? 0);
+  const args = argumentCount > 0 ? "..." : "";
+  if (expression) {
+    return `${expression}.${symbol.name}(${args})`;
+  }
+  return `${symbol.name}(${args})`;
 }
