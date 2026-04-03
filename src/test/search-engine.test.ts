@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import { JavaCodeSearchEngine, parseJavaSource } from "../index.js";
+import { JavaCodeSearchEngine, JavaCodeSearchService, parseJavaSource } from "../index.js";
 
 const sampleJava = `
 package com.acme.demo;
@@ -311,4 +314,166 @@ public class Runner {
 
   const chainedResolution = engine.resolveSymbol(executeCalls[1]!.symbol);
   assert.equal(chainedResolution.candidates[0]?.qualifiedName, "com.acme.demo.Runner.execute");
+});
+
+test("JavaCodeSearchService persists snapshot and refreshes incrementally", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "javasearch-"));
+
+  try {
+    const srcDir = path.join(tempRoot, "src", "main", "java", "com", "acme", "demo");
+    await mkdir(srcDir, { recursive: true });
+
+    const orderServicePath = path.join(srcDir, "OrderService.java");
+    const repositoryPath = path.join(srcDir, "Repository.java");
+
+    await writeFile(
+      repositoryPath,
+      `
+package com.acme.demo;
+
+public class Repository {
+  public void load() {}
+}
+`,
+      "utf8"
+    );
+    await writeFile(
+      orderServicePath,
+      `
+package com.acme.demo;
+
+public class OrderService {
+  private final Repository repository;
+
+  public OrderService(Repository repository) {
+    this.repository = repository;
+  }
+
+  public void run() {
+    repository.load();
+  }
+}
+`,
+      "utf8"
+    );
+
+    const service = await JavaCodeSearchService.open({ rootDir: tempRoot });
+    const firstRefresh = await service.refresh();
+    assert.equal(firstRefresh.added.length, 2);
+    assert.equal(firstRefresh.modified.length, 0);
+    assert.equal(firstRefresh.deleted.length, 0);
+
+    const snapshotRaw = await readFile(service.getCachePath(), "utf8");
+    const snapshot = JSON.parse(snapshotRaw) as { files: Array<{ filePath: string }> };
+    assert.equal(snapshot.files.length, 2);
+
+    const reopened = await JavaCodeSearchService.open({ rootDir: tempRoot });
+    const secondRefresh = await reopened.refresh();
+    assert.equal(secondRefresh.added.length, 0);
+    assert.equal(secondRefresh.modified.length, 0);
+    assert.equal(secondRefresh.deleted.length, 0);
+    assert.equal(
+      reopened.search({ kind: "call", text: "load", exact: true }).length,
+      1
+    );
+
+    await writeFile(
+      repositoryPath,
+      `
+package com.acme.demo;
+
+public class Repository {
+  public void load() {}
+
+  public void save() {}
+}
+`,
+      "utf8"
+    );
+
+    const thirdRefresh = await reopened.refresh();
+    assert.equal(thirdRefresh.modified.length, 1);
+    assert.equal(
+      reopened.search({ kind: "method", text: "save", exact: true }).length,
+      1
+    );
+
+    await rm(orderServicePath);
+    const fourthRefresh = await reopened.refresh();
+    assert.equal(fourthRefresh.deleted.length, 1);
+    assert.equal(
+      reopened.search({ kind: "class", text: "OrderService", exact: true }).length,
+      0
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("JavaCodeSearchService watch refreshes on file changes", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "javasearch-watch-"));
+  let handle: { close(): void } | undefined;
+
+  try {
+    const srcDir = path.join(tempRoot, "src", "main", "java", "com", "acme", "demo");
+    await mkdir(srcDir, { recursive: true });
+
+    const repositoryPath = path.join(srcDir, "Repository.java");
+    await writeFile(
+      repositoryPath,
+      `
+package com.acme.demo;
+
+public class Repository {
+  public void load() {}
+}
+`,
+      "utf8"
+    );
+
+    const service = await JavaCodeSearchService.open({ rootDir: tempRoot });
+    await service.refresh();
+
+    let resolveRefresh: (() => void) | undefined;
+    const refreshed = new Promise<void>((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    handle = await service.watch({
+      debounceMs: 50,
+      onRefresh: (summary) => {
+        if (summary.modified.some((file) => file.endsWith("Repository.java"))) {
+          resolveRefresh?.();
+        }
+      }
+    });
+
+    await writeFile(
+      repositoryPath,
+      `
+package com.acme.demo;
+
+public class Repository {
+  public void load() {}
+
+  public void save() {}
+}
+`,
+      "utf8"
+    );
+
+    const timeout = new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new Error("watch refresh timed out")), 5000);
+      refreshed.finally(() => clearTimeout(timer));
+    });
+
+    await Promise.race([refreshed, timeout]);
+    assert.equal(
+      service.search({ kind: "method", text: "save", exact: true }).length,
+      1
+    );
+  } finally {
+    handle?.close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });

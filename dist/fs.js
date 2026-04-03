@@ -10,9 +10,15 @@ const DEFAULT_EXCLUDE_DIRS = new Set([
     ".gradle"
 ]);
 export async function collectJavaFiles(rootDir, excludeDirs = []) {
+    const { files } = await collectWorkspaceEntries(rootDir, excludeDirs);
+    return files;
+}
+export async function collectWorkspaceEntries(rootDir, excludeDirs = []) {
     const mergedExcludes = new Set([...DEFAULT_EXCLUDE_DIRS, ...excludeDirs]);
     const files = [];
+    const directories = [];
     async function walk(currentDir) {
+        directories.push(currentDir);
         const entries = await readdir(currentDir, { withFileTypes: true });
         for (const entry of entries) {
             const fullPath = path.join(currentDir, entry.name);
@@ -28,7 +34,10 @@ export async function collectJavaFiles(rootDir, excludeDirs = []) {
         }
     }
     await walk(rootDir);
-    return files.sort();
+    return {
+        files: files.sort(),
+        directories: directories.sort((a, b) => a.localeCompare(b))
+    };
 }
 export async function readUtf8File(filePath) {
     return readFile(filePath, "utf8");

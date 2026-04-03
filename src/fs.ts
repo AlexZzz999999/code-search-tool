@@ -15,10 +15,20 @@ export async function collectJavaFiles(
   rootDir: string,
   excludeDirs: string[] = []
 ): Promise<string[]> {
+  const { files } = await collectWorkspaceEntries(rootDir, excludeDirs);
+  return files;
+}
+
+export async function collectWorkspaceEntries(
+  rootDir: string,
+  excludeDirs: string[] = []
+): Promise<{ files: string[]; directories: string[] }> {
   const mergedExcludes = new Set([...DEFAULT_EXCLUDE_DIRS, ...excludeDirs]);
   const files: string[] = [];
+  const directories: string[] = [];
 
   async function walk(currentDir: string): Promise<void> {
+    directories.push(currentDir);
     const entries = await readdir(currentDir, { withFileTypes: true });
 
     for (const entry of entries) {
@@ -37,7 +47,10 @@ export async function collectJavaFiles(
   }
 
   await walk(rootDir);
-  return files.sort();
+  return {
+    files: files.sort(),
+    directories: directories.sort((a, b) => a.localeCompare(b))
+  };
 }
 
 export async function readUtf8File(filePath: string): Promise<string> {

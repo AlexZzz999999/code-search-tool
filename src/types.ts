@@ -76,3 +76,43 @@ export interface IndexWorkspaceOptions {
   include?: string[];
   excludeDirs?: string[];
 }
+
+export interface FileFingerprint {
+  filePath: string;
+  mtimeMs: number;
+  size: number;
+}
+
+export interface PersistedFileIndex extends FileFingerprint {
+  index: JavaFileIndex;
+}
+
+export interface PersistedIndexSnapshot {
+  version: number;
+  rootDir: string;
+  updatedAt: string;
+  files: PersistedFileIndex[];
+}
+
+export interface JavaCodeSearchServiceOptions {
+  rootDir: string;
+  cacheDir?: string;
+  excludeDirs?: string[];
+}
+
+export interface RefreshSummary {
+  added: string[];
+  modified: string[];
+  deleted: string[];
+  unchanged: string[];
+}
+
+export interface WatchOptions {
+  debounceMs?: number;
+  onRefresh?: (summary: RefreshSummary) => void | Promise<void>;
+  onError?: (error: unknown) => void | Promise<void>;
+}
+
+export interface WatchHandle {
+  close(): void;
+}

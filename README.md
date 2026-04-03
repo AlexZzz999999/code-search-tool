@@ -18,11 +18,15 @@ npm install @shaobin/code-search-tool
 ## 作为库调用
 
 ```ts
-import { JavaCodeSearchEngine } from "@shaobin/code-search-tool";
+import { JavaCodeSearchService } from "@shaobin/code-search-tool";
 
-const engine = await JavaCodeSearchEngine.fromWorkspace("/path/to/java-repo");
+const service = await JavaCodeSearchService.open({
+  rootDir: "/path/to/java-repo"
+});
 
-const methods = engine.search({
+await service.refresh();
+
+const methods = service.search({
   text: "findOrder",
   kind: "method",
   exact: true
@@ -36,6 +40,18 @@ console.log(methods);
 ### `JavaCodeSearchEngine.fromWorkspace(rootDir)`
 
 扫描 Java 仓库并建立内存索引。
+
+### `JavaCodeSearchService.open({ rootDir, cacheDir? })`
+
+打开一个带本地 JSON 快照能力的仓库服务。默认会把索引持久化到 `<rootDir>/.javasearch/index.json`。
+
+### `service.refresh()`
+
+按文件的 `mtimeMs + size` 做增量刷新，只重新解析新增或修改过的 Java 文件，并移除已删除文件的索引结果。
+
+### `service.watch({ debounceMs?, onRefresh?, onError? })`
+
+启动监听模式。当前版本使用轮询方式检测 Java 文件变化，并在变化后自动触发一次防抖后的增量刷新，适合编辑器集成、后台索引服务或本地开发工具。
 
 ### `engine.search(query)`
 
@@ -113,13 +129,15 @@ javasearch search --root /path/to/java-repo --text findOrder --kind method --exa
 - 跨文件类型定义解析和基础引用反查
 - 基于字段、方法参数和 `this` 的方法调用目标解析
 - 局部变量类型推断与基础链式调用返回值推断
+- 本地 JSON 索引持久化与增量刷新
+- `watch()` 自动监听文件变化并刷新索引
 - 包名和 imports 提取
 
 下一步很适合继续扩展：
 
 - 方法参数、返回值、修饰符过滤
 - 局部变量、链式调用返回值推断和完整调用链能力
-- 增量索引与缓存持久化
+- 更细粒度的按文件刷新接口和监听状态指标
 
 ## 本地开发
 
