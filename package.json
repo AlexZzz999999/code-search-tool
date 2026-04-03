@@ -1,0 +1,44 @@
+{
+  "name": "@shaobin/code-search-tool",
+  "version": "0.1.0",
+  "description": "AST-based Java repository search toolkit for Node.js projects",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "javasearch": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test dist/test/search-engine.test.js"
+  },
+  "keywords": [
+    "java",
+    "ast",
+    "search",
+    "tree-sitter",
+    "code-search"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-java": "^0.23.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "typescript": "^5.8.3"
+  }
+}
