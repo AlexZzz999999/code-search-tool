@@ -263,6 +263,7 @@ handle.close();
 - `constructor`
 - `field`
 - `call`
+- `error_code`
 - `extends`
 - `implements`
 - `annotation_usage`
@@ -389,7 +390,35 @@ const results = service.search({
 });
 ```
 
-## 7.6 查找接口实现关系
+## 7.6 查找错误码
+
+适合排查这类代码：
+
+```java
+private static final String ORDER_NOT_FOUND = "E20001";
+throw new BusinessException("I10001");
+```
+
+对应搜索：
+
+```ts
+const results = service.search({
+  kind: "error_code",
+  text: "E20001",
+  exact: true
+});
+```
+
+当前版本会索引 Java 字符串字面量中形如 `E20001`、`I10001` 的错误码，并在 `metadata` 中带出常见使用上下文，例如：
+
+- `usageKind=variable_initializer`
+- `usageKind=constructor_argument`
+- `usageKind=method_argument`
+- `enclosingCallable`
+- `variableName`
+- `argumentOf`
+
+## 7.7 查找接口实现关系
 
 例如查 `OrderService` 实现了哪些接口：
 
@@ -400,7 +429,7 @@ const results = service.search({
 });
 ```
 
-## 7.7 查找注解使用点
+## 7.8 查找注解使用点
 
 例如查所有带 `@Transactional` 的方法：
 

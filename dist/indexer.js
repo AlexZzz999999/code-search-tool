@@ -8,6 +8,7 @@ const TYPE_KINDS = new Map([
     ["record_declaration", "record"],
     ["annotation_type_declaration", "annotation"]
 ]);
+const ERROR_CODE_PATTERN = /^[A-Z]\d{4,}$/;
 export async function indexJavaWorkspace(options) {
     const files = await collectJavaFiles(options.rootDir, options.excludeDirs);
     const indexed = await Promise.all(files.map((filePath) => indexJavaFile(filePath)));
@@ -289,6 +290,25 @@ function walkNode(context) {
             }));
         }
     }
+    if (node.type === "string_literal") {
+        const errorCode = extractErrorCodeLiteral(node, source);
+        if (errorCode) {
+            const enclosingType = typeStack[typeStack.length - 1];
+            const currentCallable = callableStack[callableStack.length - 1];
+            symbols.push(createSymbol({
+                kind: "error_code",
+                name: errorCode,
+                packageName,
+                enclosingType: enclosingType?.name,
+                filePath,
+                node,
+                metadata: {
+                    enclosingCallable: currentCallable?.name,
+                    ...describeErrorCodeUsage(node, source)
+                }
+            }));
+        }
+    }
     for (const child of node.namedChildren) {
         walkNode({
             ...context,
@@ -323,6 +343,53 @@ function readInvocationQualifier(node, source) {
 function countInvocationArguments(node) {
     const argumentsNode = node.childForFieldName("arguments");
     return argumentsNode?.namedChildCount ?? 0;
+}
+function extractErrorCodeLiteral(node, source) {
+    const raw = sliceText(node, source);
+    const unquoted = raw.slice(1, -1);
+    return ERROR_CODE_PATTERN.test(unquoted) ? unquoted : undefined;
+}
+function describeErrorCodeUsage(node, source) {
+    const parent = node.parent;
+    if (parent?.type === "variable_declarator") {
+        const nameNode = parent.childForFieldName("name");
+        return {
+            usageKind: "variable_initializer",
+            variableName: nameNode ? sliceText(nameNode, source) : undefined
+        };
+    }
+    if (parent?.type === "argument_list" && parent.parent?.type === "method_invocation") {
+        const invocationNode = parent.parent;
+        const nameNode = invocationNode.childForFieldName("name");
+        return {
+            usageKind: "method_argument",
+            argumentOf: nameNode ? sliceText(nameNode, source) : undefined
+        };
+    }
+    if (parent?.type === "argument_list" && parent.parent?.type === "object_creation_expression") {
+        const creationNode = parent.parent;
+        const typeNode = creationNode.childForFieldName("type") ??
+            creationNode.namedChildren.find((child) => ["type_identifier", "scoped_type_identifier", "generic_type"].includes(child.type));
+        return {
+            usageKind: "constructor_argument",
+            argumentOf: typeNode ? readTypeName(typeNode, source) : undefined
+        };
+    }
+    if (parent?.type === "element_value_pair") {
+        const keyNode = parent.childForFieldName("key");
+        return {
+            usageKind: "annotation_argument",
+            annotationKey: keyNode ? sliceText(keyNode, source) : undefined
+        };
+    }
+    if (parent?.type === "return_statement") {
+        return {
+            usageKind: "return_value"
+        };
+    }
+    return {
+        usageKind: parent?.type
+    };
 }
 function addAnnotationSymbols(input) {
     for (const annotation of input.annotations) {

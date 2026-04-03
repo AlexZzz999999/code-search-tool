@@ -8,6 +8,7 @@ export type JavaSymbolKind =
   | "constructor"
   | "field"
   | "call"
+  | "error_code"
   | "extends"
   | "implements"
   | "annotation_usage";

@@ -36,15 +36,24 @@ const results = service.search({
 });
 
 console.log(results);
+
+const errorCodes = service.search({
+  kind: "error_code",
+  text: "E20001",
+  exact: true
+});
+
+console.log(errorCodes);
 ```
 
 ## 核心能力
 
 - AST 驱动的 Java 结构化检索
-- 类、接口、方法、字段、调用点搜索
+- 类、接口、方法、字段、调用点、错误码搜索
 - `extends` / `implements` / 注解使用点检索
 - 跨文件类型定义解析
 - 方法调用目标解析
+- Java 字符串字面量中的错误码提取
 - 本地 JSON 索引持久化
 - 增量刷新
 - `watch()` 自动刷新

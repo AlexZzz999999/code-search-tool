@@ -1,4 +1,4 @@
-export type JavaSymbolKind = "class" | "interface" | "enum" | "record" | "annotation" | "method" | "constructor" | "field" | "call" | "extends" | "implements" | "annotation_usage";
+export type JavaSymbolKind = "class" | "interface" | "enum" | "record" | "annotation" | "method" | "constructor" | "field" | "call" | "error_code" | "extends" | "implements" | "annotation_usage";
 export interface SourcePosition {
     line: number;
     column: number;

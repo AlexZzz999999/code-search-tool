@@ -63,11 +63,70 @@ test("parseJavaSource extracts core symbols", () => {
   );
 });
 
+test("parseJavaSource extracts error code literals with usage context", () => {
+  const file = parseJavaSource({
+    filePath: "/tmp/ErrorCodes.java",
+    source: `
+package com.acme.demo;
+
+public class ErrorCodes {
+  private static final String ORDER_NOT_FOUND = "E20001";
+
+  public String load() {
+    String invalid = "I10001";
+    throw new BusinessException("E30001");
+  }
+}
+`
+  });
+
+  const errorCodes = file.symbols.filter((symbol) => symbol.kind === "error_code");
+  assert.equal(errorCodes.length, 3);
+  assert.ok(
+    errorCodes.find(
+      (symbol) =>
+        symbol.name === "E20001" &&
+        symbol.metadata?.usageKind === "variable_initializer" &&
+        symbol.metadata?.variableName === "ORDER_NOT_FOUND"
+    )
+  );
+  assert.ok(
+    errorCodes.find(
+      (symbol) =>
+        symbol.name === "I10001" &&
+        symbol.metadata?.usageKind === "variable_initializer" &&
+        symbol.metadata?.variableName === "invalid" &&
+        symbol.metadata?.enclosingCallable === "load"
+    )
+  );
+  assert.ok(
+    errorCodes.find(
+      (symbol) =>
+        symbol.name === "E30001" &&
+        symbol.metadata?.usageKind === "constructor_argument" &&
+        symbol.metadata?.argumentOf === "BusinessException" &&
+        symbol.metadata?.enclosingCallable === "load"
+    )
+  );
+});
+
 test("JavaCodeSearchEngine supports name and kind filtering", () => {
   const engine = new JavaCodeSearchEngine([
     parseJavaSource({
       filePath: "/tmp/OrderService.java",
       source: sampleJava
+    }),
+    parseJavaSource({
+      filePath: "/tmp/ErrorCodes.java",
+      source: `
+package com.acme.demo;
+
+public class ErrorCodes {
+  public void run() {
+    throw new BusinessException("E20001");
+  }
+}
+`
     })
   ]);
 
@@ -100,6 +159,15 @@ test("JavaCodeSearchEngine supports name and kind filtering", () => {
     subjectName: "OrderService"
   });
   assert.equal(implementsResults.length, 2);
+
+  const errorCodeResults = engine.search({
+    kind: "error_code",
+    text: "E20001",
+    exact: true
+  });
+  assert.equal(errorCodeResults.length, 1);
+  assert.equal(errorCodeResults[0]?.symbol.metadata?.argumentOf, "BusinessException");
+  assert.equal(errorCodeResults[0]?.symbol.metadata?.usageKind, "constructor_argument");
 });
 
 test("JavaCodeSearchEngine resolves cross-file type references", () => {
